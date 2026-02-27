@@ -1,0 +1,12 @@
+# Ignore everything at root (colab notebooks, etc.)
+*
+
+# Track local/ and its contents
+!local/
+!local/**
+
+# But ignore venv inside local
+local/.venv/
+
+# Track this file itself
+!.gitignore
