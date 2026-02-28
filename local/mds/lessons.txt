@@ -1,0 +1,5 @@
+1. Always have a thorugh look at dataset. see where white spaces are , 
+    kinda important to skip them from tokenizing. 
+
+2. Also see if EOT token is available. if not append it.
+

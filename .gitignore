@@ -5,8 +5,22 @@
 !local/
 !local/**
 
+# Track misc/ and its contents
+!misc/
+!misc/**
+
 # But ignore venv inside local
 local/.venv/
+
+# Ignore data files (large binaries)
+local/data/
+
+# Ignore python cache
+local/__pycache__/
+local/**/__pycache__/
+
+# Ignore wandb logs
+local/wandb/
 
 # Track this file itself
 !.gitignore
