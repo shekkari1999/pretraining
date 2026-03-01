@@ -41,12 +41,12 @@ log_interval = 10       # print every N steps
 # system
 device = DEVICE
 dtype = 'float16'       # float16 for T4, bfloat16 for A100+
-compile_model = False   # torch.compile — set True on Linux/GPU
+compile_model = True    # torch.compile — fuses ops, reduces kernel launches
 
 # wandb
 wandb_log = True
 wandb_project = 'pretraining'
-wandb_run_name = f'gpt2-124m-wikitext103-amp-fp16'
+wandb_run_name = f'gpt2-124m-wikitext103-amp-fp16-compile'
 
 # -----------------------------------------------------------------------------
 # Data loading
@@ -161,6 +161,10 @@ print(f"Starting training for {max_steps} steps...")
 print(f"Batch size: {batch_size}, Block size: {block_size}")
 print(f"Tokens per step: {batch_size * block_size:,}")
 
+# reset memory stats for clean tracking
+if device == 'cuda':
+    torch.cuda.reset_peak_memory_stats()
+
 best_val_loss = float('inf')
 
 for step in range(max_steps):
@@ -203,18 +207,28 @@ for step in range(max_steps):
     dt = t1 - t0
     tokens_per_sec = (batch_size * block_size) / dt
 
+    # memory tracking
+    if device == 'cuda':
+        peak_mem_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+        reserved_mem_mb = torch.cuda.max_memory_reserved() / (1024 * 1024)
+
     # log
     if step % log_interval == 0:
+        mem_str = f" | mem {peak_mem_mb:.0f}MB" if device == 'cuda' else ""
         print(f"step {step:5d} | loss {loss.item():.4f} | lr {lr:.6f} | "
-              f"{dt*1000:.0f}ms | {tokens_per_sec:,.0f} tok/s")
+              f"{dt*1000:.0f}ms | {tokens_per_sec:,.0f} tok/s{mem_str}")
+        log_dict = {
+            'train/loss': loss.item(),
+            'train/lr': lr,
+            'train/step_time_ms': dt * 1000,
+            'train/tokens_per_sec': tokens_per_sec,
+            'step': step,
+        }
+        if device == 'cuda':
+            log_dict['memory/peak_allocated_mb'] = peak_mem_mb
+            log_dict['memory/peak_reserved_mb'] = reserved_mem_mb
         if wandb_log:
-            wandb.log({
-                'train/loss': loss.item(),
-                'train/lr': lr,
-                'train/step_time_ms': dt * 1000,
-                'train/tokens_per_sec': tokens_per_sec,
-                'step': step,
-            })
+            wandb.log(log_dict)
 
 print(f"\nTraining complete. Best val loss: {best_val_loss:.4f}")
 
