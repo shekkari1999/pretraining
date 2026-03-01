@@ -13,6 +13,8 @@ import wandb
 from model import GPT, GPTConfig
 from config import TRAIN_BIN, VAL_BIN, DEVICE
 
+torch.backends.cudnn.benchmark = True
+
 # -----------------------------------------------------------------------------
 # Training hyperparameters
 # -----------------------------------------------------------------------------
@@ -46,7 +48,7 @@ compile_model = True    # torch.compile — fuses ops, reduces kernel launches
 # wandb
 wandb_log = True
 wandb_project = 'pretraining'
-wandb_run_name = f'gpt2-124m-wikitext103-amp-fp16-compile'
+wandb_run_name = f'gpt2-124m-wikitext103-amp-fp16-compile-cudnn'
 
 # -----------------------------------------------------------------------------
 # Data loading
