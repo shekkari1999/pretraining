@@ -40,13 +40,13 @@ log_interval = 10       # print every N steps
 
 # system
 device = DEVICE
-dtype = 'float32'       # float32 for MacBook, bfloat16 for GPU later
+dtype = 'float16'       # float16 for T4, bfloat16 for A100+
 compile_model = False   # torch.compile — set True on Linux/GPU
 
 # wandb
 wandb_log = True
 wandb_project = 'pretraining'
-wandb_run_name = f'gpt2-124m-wikitext103-baseline'
+wandb_run_name = f'gpt2-124m-wikitext103-amp-fp16'
 
 # -----------------------------------------------------------------------------
 # Data loading
@@ -75,7 +75,8 @@ def estimate_loss():
         losses = torch.zeros(eval_steps)
         for k in range(eval_steps):
             x, y = get_batch(split)
-            logits, loss = model(x, y)
+            with torch.amp.autocast(device_type='cuda', dtype=autocast_dtype, enabled=use_amp):
+                logits, loss = model(x, y)
             losses[k] = loss.item()
         out[split] = losses.mean().item()
     model.train()
@@ -111,6 +112,7 @@ config = GPTConfig(
     dropout=dropout,
     bias=bias,
 )
+
 model = GPT(config)
 model.to(device)
 
@@ -120,6 +122,11 @@ if compile_model:
 
 # optimizer
 optimizer = model.configure_optimizers(weight_decay, learning_rate, betas, device)
+
+# AMP scaler for mixed precision
+use_amp = (dtype == 'float16' and device == 'cuda')
+scaler = torch.amp.GradScaler(enabled=use_amp)
+autocast_dtype = torch.float16 if dtype == 'float16' else torch.float32
 
 # wandb init
 if wandb_log:
@@ -179,14 +186,17 @@ for step in range(max_steps):
 
     # forward pass
     x, y = get_batch('train')
-    logits, loss = model(x, y)
+    with torch.amp.autocast(device_type='cuda', dtype=autocast_dtype, enabled=use_amp):
+        logits, loss = model(x, y)
 
     # backward pass
     optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    # gradient clipping
+    scaler.scale(loss).backward()
+    # gradient clipping (must unscale first)
+    scaler.unscale_(optimizer)
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-    optimizer.step()
+    scaler.step(optimizer)
+    scaler.update()
 
     # timing
     t1 = time.time()
